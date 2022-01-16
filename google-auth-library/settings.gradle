@@ -1,2 +1,3 @@
 rootProject.name = 'google-auth-library'
+include 'credentials'
 

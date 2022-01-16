@@ -11,6 +11,7 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$/google-auth-library" />
+            <option value="$PROJECT_DIR$/google-auth-library/credentials" />
           </set>
         </option>
       </GradleProjectSettings>
