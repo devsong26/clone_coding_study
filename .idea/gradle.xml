@@ -12,6 +12,7 @@
           <set>
             <option value="$PROJECT_DIR$/google-auth-library" />
             <option value="$PROJECT_DIR$/google-auth-library/credentials" />
+            <option value="$PROJECT_DIR$/google-auth-library/oauth2_http" />
           </set>
         </option>
       </GradleProjectSettings>

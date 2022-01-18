@@ -1,3 +1,4 @@
 rootProject.name = 'google-auth-library'
 include 'credentials'
+include 'oauth2_http'
 
