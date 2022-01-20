@@ -1,6 +1,5 @@
 package com.google.auth.http;
 
-import com.google.api.client.http.*;
 import com.google.api.client.util.Preconditions;
 import org.apache.http.auth.Credentials;
 
