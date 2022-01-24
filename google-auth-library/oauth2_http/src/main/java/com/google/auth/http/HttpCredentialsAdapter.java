@@ -1,8 +1,13 @@
 package com.google.auth.http;
 
+import com.google.api.client.http.HttpHeaders;
+import com.google.api.client.http.HttpRequest;
+import com.google.api.client.http.HttpRequestInitializer;
+import com.google.api.client.http.HttpResponse;
+import com.google.api.client.http.HttpStatusCodes;
+import com.google.api.client.http.HttpUnsuccessfulResponseHandler;
 import com.google.api.client.util.Preconditions;
-import org.apache.http.auth.Credentials;
-
+import com.google.auth.Credentials;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
