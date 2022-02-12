@@ -199,7 +199,7 @@ public class CloneLinkedList<E>
         return false;
     }
 
-    public boolean addAll(Collection<? extends E> c){
+    public boolean addAll(@SuppressWarnings("NullableProblems") Collection<? extends E> c){
         return addAll(size, c);
     }
 
@@ -573,5 +573,215 @@ public class CloneLinkedList<E>
             this.prev = prev;
         }
     }
+
+    public Iterator<E> descendingIterator(){
+        return new DescendingIterator();
+    }
+
+    private class DescendingIterator implements Iterator<E> {
+        private final ListItr itr = new ListItr(size());
+        public boolean hasNext() {
+            return itr.hasPrevious();
+        }
+        public E next(){
+            return itr.previous();
+        }
+        public void remove(){
+            itr.remove();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private CloneLinkedList<E> superClone() {
+        try {
+            return (CloneLinkedList<E>) super.clone();
+        } catch(CloneNotSupportedException e){
+            throw new InternalError(e);
+        }
+    }
+
+    public Object clone(){
+        CloneLinkedList<E> clone = superClone();
+
+        clone.first = clone.last = null;
+        clone.size = 0;
+        clone.modCount = 0;
+
+        for(Node<E> x = first; x != null; x = x.next){
+            clone.add(x.item);
+        }
+
+        return clone;
+    }
+
+    public Object[] toArray(){
+        Object[] result = new Object[size];
+        int i = 0;
+        for(Node<E> x = first; x != null; x = x.next){
+            result[i++] = x.item;
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T[] toArray(T[] a){
+        if(a.length < size){
+            a = (T[])java.lang.reflect.Array.newInstance(
+                    a.getClass().getComponentType(), size
+            );
+        }
+
+        int i = 0;
+        Object[] result = a;
+        for(Node<E> x = first; x != null; x = x.next){
+            result[i++] = x.item;
+        }
+
+        if(a.length > size){
+            a[size] = null;
+        }
+
+        return a;
+    }
+
+    private static final long serialVersionUID = 876323262645176354L;
+
+    private void writeObject(java.io.ObjectOutputStream s)
+        throws java.io.IOException{
+        s.defaultWriteObject();
+
+        s.writeInt(size);
+
+        for(Node<E> x = first; x != null; x = x.next){
+            s.writeObject(x.item);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void readObject(java.io.ObjectInputStream s)
+        throws java.io.IOException, ClassNotFoundException {
+        s.defaultReadObject();
+
+        int size = s.readInt();
+
+        for(int i=0; i<size; i++){
+            linkLast((E)s.readObject());
+        }
+    }
+
+    @Override
+    public Spliterator<E> spliterator(){
+        return new LLSpliterator<E>(this, -1, 0);
+    }
+
+    static final class LLSpliterator<E> implements Spliterator<E> {
+        static final int BATCH_UNIT = 1 << 10;
+        static final int MAX_BATCH = 1 << 25;
+        final CloneLinkedList<E> list;
+        Node<E> current;
+        int est;
+        int expectedModCount;
+        int batch;
+
+        LLSpliterator(CloneLinkedList<E> list, int est, int expectedModCount) {
+            this.list = list;
+            this.est = est;
+            this.expectedModCount = expectedModCount;
+        }
+
+        int getEst(){
+            int s;
+            final CloneLinkedList<E> lst;
+            if((s = est) < 0){
+                if((lst = list) == null){
+                    s = est = 0;
+                }else{
+                    expectedModCount = lst.modCount;
+                    current = lst.first;
+                    s = est = lst.size;
+                }
+            }
+            return s;
+        }
+
+        public long estimateSize(){
+            return getEst();
+        }
+
+        public Spliterator<E> trySplit(){
+            Node<E> p;
+            int s = getEst();
+            if(s > 1 && (p = current) != null){
+                int n = batch + BATCH_UNIT;
+                if(n > s){
+                    n = s;
+                }
+                if(n > MAX_BATCH){
+                    n = MAX_BATCH;
+                }
+
+                Object[] a = new Object[n];
+                int j = 0;
+                do {
+                    a[j++] = p.item;
+                }while((p = p.next) != null && j < n);
+
+                current = p;
+                batch = j;
+                est = s - j;
+                return Spliterators.spliterator(a, 0, j, Spliterator.ORDERED);
+            }
+            return null;
+        }
+
+        public void forEachRemaining(Consumer<? super E> action){
+            Node<E> p; int n;
+            if(action == null){
+                throw new NullPointerException();
+            }
+
+            if((n = getEst()) > 0 && (p = current) != null){
+                current = null;
+                est = 0;
+                do {
+                    E e = p.item;
+                    p = p.next;
+                    action.accept(e);
+                } while (p != null && --n > 0);
+            }
+
+            if(list.modCount != expectedModCount){
+                throw new ConcurrentModificationException();
+            }
+        }
+
+        public boolean tryAdvance(Consumer<? super E> action){
+            Node<E> p;
+            if (action == null){
+                throw new NullPointerException();
+            }
+
+            if(getEst() > 0 && (p = current) != null){
+                --est;
+                E e = p.item;
+                current = p.next;
+                action.accept(e);
+                if(list.modCount != expectedModCount){
+                    throw new ConcurrentModificationException();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        public int characteristics(){
+            return Spliterator.ORDERED | Spliterator.SIZED | Spliterator.SUBSIZED;
+        }
+
+    }
+
+//    public static void main(String[] args){
+//        System.out.println(1 << 10);
+//    }
 
 }
