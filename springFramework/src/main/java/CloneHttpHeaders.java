@@ -1,10 +1,14 @@
-import org.springframework.util.MultiValueMap;
+import org.springframework.http.MediaType;
+import org.springframework.util.*;
 
 import java.io.Serializable;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class CloneHttpHeaders implements MultiValueMap<String, String>, Serializable {
 
@@ -100,7 +104,89 @@ public class CloneHttpHeaders implements MultiValueMap<String, String>, Serializ
 
     public static final String PROXY_AUTHORIZATION = "Proxy-Authorization";
 
+    public static final String RANGE = "Range";
 
+    public static final String REFERER = "Referer";
+
+    public static final String RETRY_AFTER = "Retry-After";
+
+    public static final String SERVER = "Server";
+
+    public static final String SET_COOKIE = "Set-Cookie";
+
+    public static final String SET_COOKIE2 = "Set-Cookie2";
+
+    public static final String TE = "TE";
+
+    public static final String TRAILER = "Trailer";
+
+    public static final String TRANSFER_ENCODING = "Transfer-Encoding";
+
+    public static final String UPGRADE = "Upgrade";
+
+    public static final String USER_AGENT = "User-Agent";
+
+    public static final String VARY = "Vary";
+
+    public static final String VIA = "Via";
+
+    public static final String WARNING = "Warning";
+
+    public static final String WWW_AUTHENTICATE = "WWW-Authenticate";
+
+    public static final CloneHttpHeaders EMPTY = new ReadOnlyHttpHeaders(new LinkedMultiValueMap<>());
+
+    private static final Pattern ETAG_HEADER_VALUE_PATTERN = Pattern.compile("\\*|\\s*((W\\/)?(\"[^\"]*\"))\\s*,?");
+
+    private static final DecimalFormatSymbols DECIMAL_FORMAT_SYMBOLS = new DecimalFormatSymbols(Locale.ENGLISH);
+
+    private static final ZoneId GMT = ZoneId.of("GMT");
+
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).withZone(GMT);
+
+    private static final DateTimeFormatter[] DATE_PARSERS = new DateTimeFormatter[] {
+            DateTimeFormatter.RFC_1123_DATE_TIME,
+            DateTimeFormatter.ofPattern("EEEE, dd-MMM-yy HH:mm:ss zzz", Locale.US),
+            DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss yyyy", Locale.US).withZone(GMT)
+    };
+
+
+    final MultiValueMap<String, String> headers;
+
+
+    public CloneHttpHeaders() {
+        this(CollectionUtils.toMultiValueMap(new LinkedCaseInsensitiveMap<>(8, Locale.ENGLISH)));
+    }
+
+    public CloneHttpHeaders(MultiValueMap<String, String> headers){
+        Assert.notNull(headers, "MultiValueMap must not be null");
+        this.headers = headers;
+    }
+
+    public List<String> getOrEmpty(Object headerName){
+        List<String> values = get(headerName);
+        return (values != null ? values : Collections.emptyList());
+    }
+
+    public void setAccept(List<MediaType> acceptableMediaTypes){
+        set(ACCEPT, MediaType.toString(acceptableMediaTypes));
+    }
+
+    public List<MediaType> getAccept(){
+        return MediaType.parseMediaTypes(get(ACCEPT));
+    }
+
+    public void setAcceptLanguage(List<Locale.LanguageRange> languages){
+        Assert.notNull(languages, "LanguageRange List must not be null");
+        DecimalFormat decimal = new DecimalFormat("0.0", DECIMAL_FORMAT_SYMBOLS);
+        List<String> values = languages.stream()
+                .map(range ->
+                        range.getWeight() == Locale.LanguageRange.MAX_WEIGHT ?
+                                range.getRange() :
+                                range.getRange() + ";q=" + decimal.format(range.getWeight()))
+                .collect(Collectors.toList());
+        set(ACCEPT_LANGUAGE, toCommaDelimitedString(values));
+    }
 
     @Override
     public String getFirst(String key) {
