@@ -1,12 +1,23 @@
-import org.springframework.http.MediaType;
+import org.springframework.http.*;
+import org.springframework.lang.Nullable;
 import org.springframework.util.*;
 
 import java.io.Serializable;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -57,6 +68,8 @@ public class CloneHttpHeaders implements MultiValueMap<String, String>, Serializ
     public static final String CONTENT_DISPOSITION = "Content-Disposition";
 
     public static final String CONTENT_LANGUAGE = "Content-Language";
+
+    public static final String CONTENT_LENGTH = "Content-Length";
 
     public static final String CONTENT_LOCATION = "Content-Location";
 
@@ -134,7 +147,7 @@ public class CloneHttpHeaders implements MultiValueMap<String, String>, Serializ
 
     public static final String WWW_AUTHENTICATE = "WWW-Authenticate";
 
-    public static final CloneHttpHeaders EMPTY = new ReadOnlyHttpHeaders(new LinkedMultiValueMap<>());
+    public static final CloneHttpHeaders EMPTY = new CloneReadOnlyHttpHeaders(new LinkedMultiValueMap<>());
 
     private static final Pattern ETAG_HEADER_VALUE_PATTERN = Pattern.compile("\\*|\\s*((W\\/)?(\"[^\"]*\"))\\s*,?");
 
@@ -188,98 +201,791 @@ public class CloneHttpHeaders implements MultiValueMap<String, String>, Serializ
         set(ACCEPT_LANGUAGE, toCommaDelimitedString(values));
     }
 
-    @Override
-    public String getFirst(String key) {
+    public List<Locale.LanguageRange> getAcceptLanguage() {
+        String value = getFirst(ACCEPT_LANGUAGE);
+        return (StringUtils.hasText(value) ? Locale.LanguageRange.parse(value) : Collections.emptyList());
+    }
+
+    public void setAcceptLanguageAsLocales(List<Locale> locales) {
+        setAcceptLanguage(locales.stream()
+                .map(locale -> new Locale.LanguageRange(locale.toLanguageTag()))
+                .collect(Collectors.toList()));
+    }
+
+    public List<Locale> getAcceptLanguageAsLocales() {
+        List<Locale.LanguageRange> ranges = getAcceptLanguage();
+        if(ranges.isEmpty()){
+            return Collections.emptyList();
+        }
+        return ranges.stream()
+                .map(range -> Locale.forLanguageTag(range.getRange()))
+                .filter(locale -> StringUtils.hasText(locale.getDisplayName()))
+                .collect(Collectors.toList());
+    }
+
+    public void setAcceptPatch(List<MediaType> mediaTypes){
+        set(ACCEPT_PATCH, MediaType.toString(mediaTypes));
+    }
+
+    public void setAccessControlAllowCredentials(boolean allowCredentials){
+        set(ACCESS_CONTROL_ALLOW_CREDENTIALS, Boolean.toString(allowCredentials));
+    }
+
+    public boolean getAccessControlAllowCredentials(){
+        return Boolean.parseBoolean(getFirst(ACCESS_CONTROL_ALLOW_CREDENTIALS));
+    }
+
+    public void setAccessControlAllowHeaders(List<String> allowedHeaders){
+        set(ACCESS_CONTROL_ALLOW_HEADERS, toCommaDelimitedString(allowedHeaders));
+    }
+
+    public List<String> getAccessControlAllowHeaders() {
+        return getValuesAsList(ACCESS_CONTROL_ALLOW_HEADERS);
+    }
+
+    public void setAccessControlAllowMethods(List<HttpMethod> allowedMethods){
+        set(ACCESS_CONTROL_ALLOW_METHODS, StringUtils.collectionToCommaDelimitedString(allowedMethods));
+    }
+
+    public List<HttpMethod> getAccessControlAllowMethods(){
+        List<HttpMethod> result = new ArrayList<>();
+        String value = getFirst(ACCESS_CONTROL_ALLOW_METHODS);
+        if(value != null){
+            String[] tokens = StringUtils.tokenizeToStringArray(value, ",");
+            for(String token : tokens){
+                HttpMethod resolved = HttpMethod.resolve(token);
+                if(resolved != null){
+                    result.add(resolved);
+                }
+            }
+        }
+        return result;
+    }
+
+    public void setAccessControlAllowOrigin(@Nullable String allowedOrigin){
+        setOrRemove(ACCESS_CONTROL_ALLOW_ORIGIN, allowedOrigin);
+    }
+
+    @Nullable
+    public String getAccessControlAllowOrigin(){
+        return getFieldValues(ACCESS_CONTROL_ALLOW_ORIGIN);
+    }
+
+    public void setAccessControlExposeHeaders(List<String> exposedHeaders){
+        set(ACCESS_CONTROL_EXPOSE_HEADERS, toCommaDelimitedString(exposedHeaders));
+    }
+
+    public List<String> getAccessControlExposeHeaders(){
+        return getValuesAsList(ACCESS_CONTROL_EXPOSE_HEADERS);
+    }
+
+    public void setAccessControlMaxAge(Duration maxAge){
+        set(ACCESS_CONTROL_MAX_AGE, Long.toString(maxAge.getSeconds()));
+    }
+
+    public void setAccessControlMaxAge(long maxAge){
+        set(ACCESS_CONTROL_MAX_AGE, Long.toString(maxAge));
+    }
+
+    public long getAccessControlMaxAge(){
+        String value = getFirst(ACCESS_CONTROL_MAX_AGE);
+        return (value != null ? Long.parseLong(value) : -1);
+    }
+
+    public void setAccessControlRequestHeaders(List<String> requestHeaders){
+        set(ACCESS_CONTROL_REQUEST_HEADERS, toCommaDelimitedString(requestHeaders));
+    }
+
+    public List<String> getAcceptControlRequestHeaders(){
+        return getValuesAsList(ACCESS_CONTROL_REQUEST_HEADERS);
+    }
+
+    public void setAccessControlRequestMethod(@Nullable HttpMethod requestMethod){
+        setOrRemove(ACCESS_CONTROL_REQUEST_METHOD, (requestMethod != null ? requestMethod.name() : null));
+    }
+
+    @Nullable
+    public HttpMethod getAccessControlRequestMethod(){
+        return HttpMethod.resolve(getFirst(ACCESS_CONTROL_REQUEST_METHOD));
+    }
+
+    public void setAcceptCharset(List<Charset> acceptableCharsets){
+        StringJoiner joiner = new StringJoiner(", ");
+        for(Charset charset : acceptableCharsets){
+            joiner.add(charset.name().toLowerCase(Locale.ENGLISH));
+        }
+        set(ACCEPT_CHARSET, joiner.toString());
+    }
+
+    public List<Charset> getAcceptCharset(){
+        String value = getFirst(ACCEPT_CHARSET);
+        if(value != null){
+            String[] tokens = StringUtils.tokenizeToStringArray(value, ",");
+            List<Charset> result = new ArrayList<>(tokens.length);
+            for(String token : tokens){
+                int paramIdx = token.indexOf(';');
+                String charsetName;
+                if(paramIdx == -1){
+                    charsetName = token;
+                }else{
+                    charsetName = token.substring(0, paramIdx);
+                }
+
+                if(!charsetName.equals("*")){
+                    result.add(Charset.forName(charsetName));
+                }
+            }
+            return result;
+        }else{
+            return Collections.emptyList();
+        }
+    }
+
+    public void setAllow(Set<HttpMethod> allowedMethods){
+        set(ALLOW, StringUtils.collectionToCommaDelimitedString(allowedMethods));
+    }
+
+    public Set<HttpMethod> getAllow(){
+        String value = getFirst(ALLOW);
+        if(StringUtils.hasLength(value)){
+            String[] tokens = StringUtils.tokenizeToStringArray(value, ",");
+            List<HttpMethod> result = new ArrayList<>(tokens.length);
+            for(String token : tokens){
+                HttpMethod resolved = HttpMethod.resolve(token);
+                if(resolved != null){
+                    result.add(resolved);
+                }
+            }
+            return EnumSet.copyOf(result);
+        }else{
+            return EnumSet.noneOf(HttpMethod.class);
+        }
+    }
+
+    public void setBasicAuth(String username, String password){
+        setBasicAuth(username, password, null);
+    }
+
+    public void setBasicAuth(String username, String password, @Nullable Charset charset){
+        setBasicAuth(encodeBasicAuth(username, password, charset));
+    }
+
+    public void setBasicAuth(String encodedCredentials){
+        Assert.hasText(encodedCredentials, "'encodedCredentials' must not be null or blank");
+        set(AUTHORIZATION, "Basic " + encodedCredentials);
+    }
+
+    public void setBearerAuth(String token){
+        set(AUTHORIZATION, "Bearer " + token);
+    }
+
+    public void setCacheControl(CacheControl cacheControl){
+        setOrRemove(CACHE_CONTROL, cacheControl.getHeaderValue());
+    }
+
+    public void setCacheControl(@Nullable String cacheControl){
+        setOrRemove(CACHE_CONTROL, cacheControl);
+    }
+
+    @Nullable
+    public String getCacheControl(){
+        return getFieldValues(CACHE_CONTROL);
+    }
+
+    public void setConnection(String connection){
+        set(CONNECTION, connection);
+    }
+
+    public void setConnection(List<String> connection){
+        set(CONNECTION, toCommaDelimitedString(connection));
+    }
+
+    public List<String> getConnection(){
+        return getValuesAsList(CONNECTION);
+    }
+
+    public void setContentDispositionFormData(String name, @Nullable String filename){
+        Assert.notNull(name, "Name must not be null");
+        ContentDisposition.Builder disposition = ContentDisposition.formData().name(name);
+        if(StringUtils.hasText(filename)){
+            disposition.filename(filename);
+        }
+        setContentDisposition(disposition.build());
+    }
+
+    public void setContentDisposition(ContentDisposition contentDisposition){
+        set(CONTENT_DISPOSITION, contentDisposition.toString());
+    }
+
+    public ContentDisposition getContentDisposition(){
+        String contentDisposition = getFirst(CONTENT_DISPOSITION);
+        if(StringUtils.hasText(contentDisposition)){
+            return ContentDisposition.parse(contentDisposition);
+        }
+        return ContentDisposition.empty();
+    }
+
+    public void setContentLanguage(@Nullable Locale locale){
+        setOrRemove(CONTENT_LANGUAGE, (locale != null ? locale.toLanguageTag() : null));
+    }
+
+    @Nullable
+    public Locale getContentLanguage(){
+        return getValuesAsList(CONTENT_LANGUAGE)
+                .stream()
+                .findFirst()
+                .map(Locale::forLanguageTag)
+                .orElse(null);
+    }
+
+    public void setContentLength(long contentLength){
+        set(CONTENT_LENGTH, Long.toString(contentLength));
+    }
+
+    public long getContentLength(){
+        String value = getFirst(CONTENT_LENGTH);
+        return (value != null ? Long.parseLong(value) : -1);
+    }
+
+    public void setContentType(@Nullable MediaType mediaType){
+        if(mediaType != null){
+            Assert.isTrue(!mediaType.isWildcardType(), "Content-Type cannot contain wildcard type '*'");
+            Assert.isTrue(!mediaType.isWildcardSubtype(), "Content-Type cannot contain wildcard subtype '*'");
+            set(CONTENT_TYPE, mediaType.toString());
+        }else{
+            remove(CONTENT_TYPE);
+        }
+    }
+
+    @Nullable
+    public MediaType getContentType(){
+        String value = getFirst(CONTENT_TYPE);
+        return (StringUtils.hasLength(value) ? MediaType.parseMediaType(value) : null);
+    }
+
+    public void setDate(ZonedDateTime date){
+        setZonedDateTime(DATE, date);
+    }
+
+    public void setDate(Instant date){
+        setInstant(DATE, date);
+    }
+
+    public void setDate(long date){
+        setDate(DATE, date);
+    }
+
+    public long getDate(){
+        return getFirstDate(DATE);
+    }
+
+    public void setETag(@Nullable String etag){
+        if (etag != null){
+            Assert.isTrue(etag.startsWith("\"") || etag.startsWith("W/"),
+                    "Invalid ETag: does not start with W/ or \"");
+            Assert.isTrue(etag.endsWith("\""), "Invalid ETag: does not end with \"");
+            set(ETAG, etag);
+        }else{
+            remove(ETAG);
+        }
+    }
+
+    @Nullable
+    public String getETag(){
+        return getFirst(ETAG);
+    }
+
+    public void setExpires(ZonedDateTime expires){
+        setZonedDateTime(EXPIRES, expires);
+    }
+
+    public void setExpires(Instant expires){
+        setInstant(EXPIRES, expires);
+    }
+
+    public void setExpires(long expires){
+        setDate(EXPIRES, expires);
+    }
+
+    public long getExpires(){
+        return getFirstDate(EXPIRES, false);
+    }
+
+    public void setHost(@Nullable InetSocketAddress host){
+        if(host != null){
+            String value = host.getHostString();
+            int port = host.getPort();
+            if (port != 0){
+                value = value + ":" + port;
+            }
+            set(HOST, value);
+        }else{
+            remove(HOST, null);
+        }
+    }
+
+    @Nullable
+    public InetSocketAddress getHost(){
+        String value = getFirst(HOST);
+        if(value == null){
+            return null;
+        }
+
+        String host = null;
+        int port = 0;
+        int separator = (
+                value.startsWith("[") ?
+                        value.indexOf(':', value.indexOf(']')) :
+                        value.lastIndexOf(':'));
+
+        if(separator != -1){
+            host = value.substring(0, separator);
+            String portString = value.substring(separator + 1);
+            try {
+                port = Integer.parseInt(portString);
+            }catch (NumberFormatException ex){
+                // ignore
+            }
+        }
+        if(host == null){
+            host = value;
+        }
+        return InetSocketAddress.createUnresolved(host, port);
+    }
+
+    public void setIfMatch(String ifMatch){
+        set(IF_MATCH, ifMatch);
+    }
+
+    public void setIfMatch(List<String> ifMatchList){
+        set(IF_MATCH, toCommaDelimitedString(ifMatchList));
+    }
+
+    public List<String> getIfMatch(){
+        return getETagValuesAsList(IF_MATCH);
+    }
+
+    public void setIfModifiedSince(ZonedDateTime ifModifiedSince){
+        setZonedDateTime(IF_MODIFIED_SINCE, ifModifiedSince.withZoneSameInstant(GMT));
+    }
+
+    public void setIfModifiedSince(Instant ifModifiedSince){
+        setInstant(IF_MODIFIED_SINCE, ifModifiedSince);
+    }
+
+    public void setIfModifiedSince(long ifModifiedSince){
+        setDate(IF_MODIFIED_SINCE, ifModifiedSince);
+    }
+
+    public long getIfModifiedSince(){
+        return getFirstDate(IF_MODIFIED_SINCE, false);
+    }
+
+    public void setIfNoneMatch(String ifNoneMatch){
+        set(IF_NONE_MATCH, ifNoneMatch);
+    }
+
+    public void setIfNoneMatch(List<String> ifNoneMatchList){
+        set(IF_NONE_MATCH, toCommaDelimitedString(ifNoneMatchList));
+    }
+
+    public void setIfUnmodifiedSince(ZonedDateTime ifUnmodifiedSince){
+        setZonedDateTime(IF_UNMODIFIED_SINCE, ifUnmodifiedSince.withZoneSameInstant(GMT));
+    }
+
+    public void setIfUnmodifiedSince(Instant ifUnmodifiedSince){
+        setInstant(IF_UNMODIFIED_SINCE, ifUnmodifiedSince);
+    }
+
+    public void setIfUnmodifiedSince(long ifUnmodifiedSince){
+        setDate(IF_UNMODIFIED_SINCE, ifUnmodifiedSince);
+    }
+
+    public long getIfUnmodifiedSince(){
+        return getFirstDate(IF_UNMODIFIED_SINCE, false);
+    }
+
+    public void setLastModified(ZonedDateTime lastModified){
+        setZonedDateTime(LAST_MODIFIED, lastModified.withZoneSameInstant(GMT));
+    }
+
+    public void setLastModified(Instant lastModified){
+        setInstant(LAST_MODIFIED, lastModified);
+    }
+
+    public void setLastModified(long lastModified){
+        setDate(LAST_MODIFIED, lastModified);
+    }
+
+    public long getLastModified(){
+        return getFirstDate(LAST_MODIFIED, false);
+    }
+
+    public void setLocation(@Nullable URI location){
+        setOrRemove(LOCATION, (location != null ? location.toASCIIString() : null));
+    }
+
+    @Nullable
+    public URI getLocation(){
+        String value = getFirst(LOCATION);
+        return (value != null ? URI.create(value) : null);
+    }
+
+    public void setOrigin(@Nullable String origin){
+        setOrRemove(ORIGIN, origin);
+    }
+
+    @Nullable
+    public String getOrigin(){
+        return getFirst(ORIGIN);
+    }
+
+    public void setPragma(@Nullable String pragma){
+        setOrRemove(PRAGMA, pragma);
+    }
+
+    @Nullable
+    public String getPragma(){
+        return getFirst(PRAGMA);
+    }
+
+    public void setRange(List<HttpRange> ranges){
+        String value = HttpRange.toString(ranges);
+        set(RANGE, value);
+    }
+
+    public List<HttpRange> getRange(){
+        String value = getFirst(RANGE);
+        return HttpRange.parseRanges(value);
+    }
+
+    public void setUpgrade(@Nullable String upgrade){
+        setOrRemove(UPGRADE, upgrade);
+    }
+
+    @Nullable
+    public String getUpgrade(){
+        return getFirst(UPGRADE);
+    }
+
+    public void setVary(List<String> requestHeaders){
+        set(VARY, toCommaDelimitedString(requestHeaders));
+    }
+
+    public List<String> getVary(){
+        return getValuesAsList(VARY);
+    }
+
+    public void setZonedDateTime(String headerName, ZonedDateTime date){
+        set(headerName, DATE_FORMATTER.format(date));
+    }
+
+    public void setInstant(String headerName, Instant date){
+        setZonedDateTime(headerName, ZonedDateTime.ofInstant(date, GMT));
+    }
+
+    public void setDate(String headerName, long date){
+        setInstant(headerName, Instant.ofEpochMilli(date));
+    }
+
+    public long getFirstDate(String headerName){
+        return getFirstDate(headerName, true);
+    }
+
+    private long getFirstDate(String headerName, boolean rejectInvalid){
+        ZonedDateTime zonedDateTime = getFirstZonedDateTime(headerName, rejectInvalid);
+        return (zonedDateTime != null ? zonedDateTime.toInstant().toEpochMilli() : -1);
+    }
+
+    @Nullable
+    public ZonedDateTime getFirstZonedDateTime(String headerName){
+        return getFirstZonedDateTime(headerName, true);
+    }
+
+    @Nullable
+    private ZonedDateTime getFirstZonedDateTime(String headerName, boolean rejectInvalid){
+        String headerValue = getFirst(headerName);
+        if(headerValue == null){
+            // No header value sent at all
+            return null;
+        }
+
+        if(headerValue.length() >= 3){
+            int parametersIndex = headerValue.indexOf(';');
+            if(parametersIndex != -1){
+                headerValue = headerValue.substring(0, parametersIndex);
+            }
+
+            for(DateTimeFormatter dateFormatter : DATE_PARSERS){
+                try {
+                    return ZonedDateTime.parse(headerValue, dateFormatter);
+                }catch(DateTimeParseException ex){
+                    // ignore
+                }
+            }
+        }
+
+        if (rejectInvalid) {
+            throw new IllegalArgumentException("Cannot parse date value \"" + headerValue +
+                    "\" for \"" + headerName + "\" header");
+        }
         return null;
     }
 
-    @Override
-    public void add(String key, String value) {
+    public List<String> getValuesAsList(String headerName){
+        List<String> values = get(headerName);
 
+        if(values != null){
+            List<String> result = new ArrayList<>();
+            for(String value : values){
+                if (value != null){
+                    Collections.addAll(result, StringUtils.tokenizeToStringArray(value, ","));
+                }
+            }
+            return result;
+        }
+        return Collections.emptyList();
+    }
+
+    public void clearContentHeaders(){
+        this.headers.remove(CloneHttpHeaders.CONTENT_DISPOSITION);
+        this.headers.remove(CloneHttpHeaders.CONTENT_ENCODING);
+        this.headers.remove(CloneHttpHeaders.CONTENT_LANGUAGE);
+        this.headers.remove(CloneHttpHeaders.CONTENT_LENGTH);
+        this.headers.remove(CloneHttpHeaders.CONTENT_LOCATION);
+        this.headers.remove(CloneHttpHeaders.CONTENT_RANGE);
+        this.headers.remove(CloneHttpHeaders.CONTENT_TYPE);
+    }
+
+    protected List<String> getETagValuesAsList(String headerName){
+        List<String> values = get(headerName);
+        if(values == null){
+            return Collections.emptyList();
+        }
+
+        List<String> result = new ArrayList<>();
+        for(String value : values){
+            if(value != null){
+                Matcher matcher = ETAG_HEADER_VALUE_PATTERN.matcher(value);
+                while(matcher.find()){
+                    if("*".equals(matcher.group())){
+                        result.add(matcher.group());
+                    } else {
+                        result.add(matcher.group(1));
+                    }
+                }
+                if(result.isEmpty()){
+                    throw new IllegalArgumentException(
+                            "Could not parse header '" + headerName + "' with value '" + value + "'"
+                    );
+                }
+            }
+        }
+        return result;
+    }
+
+    @Nullable
+    protected String getFieldValues(String headerName){
+        List<String> headerValues = get(headerName);
+        return (headerValues != null ? toCommaDelimitedString(headerValues) : null);
+    }
+
+    protected String toCommaDelimitedString(List<String> headerValues){
+        StringJoiner joiner = new StringJoiner(", ");
+        for(String val : headerValues){
+            if(val != null){
+                joiner.add(val);
+            }
+        }
+        return joiner.toString();
+    }
+
+    private void setOrRemove(String headerName, @Nullable String headerValue){
+        if(headerValue != null){
+            set(headerName, headerValue);
+        }else{
+            remove(headerName);
+        }
     }
 
     @Override
-    public void addAll(String key, List<? extends String> values) {
-
+    @Nullable
+    public String getFirst(String headerName){
+        return this.headers.getFirst(headerName);
     }
 
     @Override
-    public void addAll(MultiValueMap<String, String> values) {
-
+    public void add(String headerName, @Nullable String headerValue){
+        this.headers.add(headerName, headerValue);
     }
 
     @Override
-    public void set(String key, String value) {
-
+    public void addAll(String key, List<? extends String> values){
+        this.headers.addAll(key, values);
     }
 
     @Override
-    public void setAll(Map<String, String> values) {
-
+    public void addAll(MultiValueMap<String, String> values){
+        this.headers.addAll(values);
     }
 
     @Override
-    public Map<String, String> toSingleValueMap() {
-        return null;
+    public void set(String headerName, @Nullable String headerValue){
+        this.headers.set(headerName, headerValue);
     }
 
     @Override
-    public int size() {
-        return 0;
+    public void setAll(Map<String, String> values){
+        this.headers.setAll(values);
     }
 
     @Override
-    public boolean isEmpty() {
-        return false;
+    public Map<String, String> toSingleValueMap(){
+        return this.headers.toSingleValueMap();
     }
 
     @Override
-    public boolean containsKey(Object key) {
-        return false;
+    public int size(){
+        return this.headers.size();
     }
 
     @Override
-    public boolean containsValue(Object value) {
-        return false;
+    public boolean isEmpty(){
+        return this.headers.isEmpty();
     }
 
     @Override
-    public List<String> get(Object key) {
-        return null;
+    public boolean containsKey(Object key){
+        return this.headers.containsKey(key);
     }
 
     @Override
-    public List<String> put(String key, List<String> value) {
-        return null;
+    public boolean containsValue(Object value){
+        return this.headers.containsValue(value);
     }
 
     @Override
-    public List<String> remove(Object key) {
-        return null;
+    @Nullable
+    public List<String> get(Object key){
+        return this.headers.get(key);
     }
 
     @Override
-    public void putAll(Map<? extends String, ? extends List<String>> m) {
-
+    public List<String> put(String key, List<String> value){
+        return this.headers.put(key, value);
     }
 
     @Override
-    public void clear() {
+    public List<String> remove(Object key){
+        return this.headers.remove(key);
+    }
 
+    @Override
+    public void putAll(Map<? extends String, ? extends List<String>> map){
+        this.headers.putAll(map);
+    }
+
+    @Override
+    public void clear(){
+        this.headers.clear();
     }
 
     @Override
     public Set<String> keySet() {
-        return null;
+        return this.headers.keySet();
     }
 
     @Override
-    public Collection<List<String>> values() {
-        return null;
+    public Collection<List<String>> values(){
+        return this.headers.values();
     }
 
     @Override
-    public Set<Entry<String, List<String>>> entrySet() {
-        return null;
+    public Set<Entry<String, List<String>>> entrySet(){
+        return this.headers.entrySet();
     }
+
+    @Override
+    public boolean equals(@Nullable Object other){
+        if(this == other){
+            return true;
+        }
+        if(!(other instanceof CloneHttpHeaders)){
+            return false;
+        }
+        return unwrap(this).equals(unwrap((CloneHttpHeaders) other));
+    }
+
+    private static MultiValueMap<String, String> unwrap(CloneHttpHeaders headers){
+        while(headers.headers instanceof CloneHttpHeaders){
+            headers =(CloneHttpHeaders) headers.headers;
+        }
+        return headers.headers;
+    }
+
+    @Override
+    public int hashCode(){
+        return this.headers.hashCode();
+    }
+
+    @Override
+    public String toString(){
+        return formatHeaders(this.headers);
+    }
+
+    public static CloneHttpHeaders readOnlyHttpHeaders(MultiValueMap<String, String> headers){
+        return (headers instanceof CloneHttpHeaders ?
+                readOnlyHttpHeaders((CloneHttpHeaders) headers) : new CloneReadOnlyHttpHeaders(headers));
+    }
+
+    public static CloneHttpHeaders readOnlyHttpHeaders(CloneHttpHeaders headers){
+        Assert.notNull(headers, "HttpHeaders must not be null");
+        return (headers instanceof CloneReadOnlyHttpHeaders ? headers : new CloneReadOnlyHttpHeaders(headers.headers));
+    }
+
+    public static CloneHttpHeaders writableHttpHeaders(CloneHttpHeaders headers){
+        Assert.notNull(headers, "CloneHttpHeaders must not be null");
+        if(headers == EMPTY){
+            return new CloneHttpHeaders();
+        }
+        return (headers instanceof CloneReadonlyHttpHeaders ? new HttpHeaders(headers.headers) : headers);
+    }
+
+    public static String formatHeaders(MultiValueMap<String, String> headers){
+        return headers.entrySet().stream()
+                .map(entry -> {
+                    List<String> values = entry.getValue();
+                    return entry.getKey() + ":" + (values.size() == 1 ?
+                            "\"" + values.get(0) + "\"":
+                            values.stream().map(s -> "\"" + s +"\"").collect(Collectors.joining(", ")));
+                })
+                .collect(Collectors.joining(", ", "[", "]"));
+    }
+
+    public static String encodeBasicAuth(String username, String password, @Nullable Charset charset){
+        Assert.notNull(username, "Username must not be null");
+        Assert.doesNotContain(username, ":", "Username must not contain a colon");
+        Assert.notNull(password, "Password must not be null");
+        if(charset == null){
+            charset = StandardCharsets.ISO_8859_1;
+        }
+
+        CharsetEncoder encoder = charset.newEncoder();
+        if(!encoder.canEncode(username) || !encoder.canEncode(password)){
+            throw new IllegalArgumentException(
+                    "Username or passowrd contains characters that cannot be encoded to " + charset.displayName()
+            );
+        }
+
+        String credentialsString = username + ":" + password;
+        byte[] encodedBytes = Base64.getEncoder().encode(credentialsString.getBytes(charset));
+        return new String(encodedBytes, charset);
+    }
+
+    static String formatDate(long date){
+        Instant instant = Instant.ofEpochMilli(date);
+        ZonedDateTime time = ZonedDateTime.ofInstant(instant, GMT);
+        return DATE_FORMATTER.format(time);
+    }
+
 }
