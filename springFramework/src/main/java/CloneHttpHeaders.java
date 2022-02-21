@@ -948,7 +948,7 @@ public class CloneHttpHeaders implements MultiValueMap<String, String>, Serializ
         if(headers == EMPTY){
             return new CloneHttpHeaders();
         }
-        return (headers instanceof CloneReadonlyHttpHeaders ? new HttpHeaders(headers.headers) : headers);
+        return (headers instanceof CloneReadOnlyHttpHeaders ? new CloneHttpHeaders(headers.headers) : headers);
     }
 
     public static String formatHeaders(MultiValueMap<String, String> headers){
