@@ -1,3 +1,5 @@
+import java.io.FilterOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
@@ -411,6 +413,122 @@ public class CloneBase64 {
             }
             return dp;
         }
+    }
+
+    /*
+     * An output stream for encoding bytes into the Base64.
+     */
+    private static class CloneEncOutputStream extends FilterOutputStream {
+
+        private int leftover = 0;
+        private int b0, b1, b2;
+        private boolean closed = false;
+
+        private final char[] base64;         // byte -> base64 mapping
+        private final byte[] newline;       // line separator, if needed
+        private final int linemax;
+        private final boolean doPadding;    // whether or not to pad
+        private int linepos = 0;
+
+        CloneEncOutputStream(OutputStream os, char[] base64,
+                             byte[] newline, int linemax, boolean doPadding){
+            super(os);
+            this.base64 = base64;
+            this.newline = newline;
+            this.linemax = linemax;
+            this.doPadding = doPadding;
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            byte[] buf = new byte[1];
+            buf[0] = (byte)(b & 0xff);
+            write(buf, 0, 1);
+        }
+
+        private void checkNewLine() throws IOException {
+            if(linepos == linemax){
+                out.write(newline);
+                linepos = 0;
+            }
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            if(closed){
+                throw new IOException("Stream is closed");
+            }
+            if(off < 0 || len < 0 || len > b.length - off){
+                throw new ArrayIndexOutOfBoundsException();
+            }
+            if(len == 0){
+                return;
+            }
+            if(leftover != 0){
+                if(leftover == 1){
+                    b1 = b[off++] & 0xff;
+                    len--;
+                    if(len == 0){
+                        leftover ++;
+                        return;
+                    }
+                }
+                b2 = b[off++] & 0xff;
+                len--;
+                checkNewLine();
+                out.write(base64[b0 >> 2]);
+                out.write(base64[(b0 << 4) & 0x3f | (b1 >> 4)]);
+                out.write(base64[(b1 << 2) & 0x3f | (b2 >> 6)]);
+                out.write(base64[b2 & 0x3f]);
+                linepos += 4;
+            }
+            int nBits24 = len / 3;
+            leftover = len - (nBits24 * 3);
+            while(nBits24-- > 0){
+                checkNewLine();
+                int bits = (b[off++] & 0xff) << 16 |
+                           (b[off++] & 0xff) << 8  |
+                           (b[off++] & 0xff);
+                out.write(base64[(bits >>> 18) & 0x3f]);
+                out.write(base64[(bits >>> 12) & 0x3f]);
+                out.write(base64[(bits >>> 6)  & 0x3f]);
+                out.write(base64[bits & 0x3f]);
+                linepos += 4;
+            }
+            if(leftover == 1){
+                b0 = b[off++] & 0xff;
+            } else if(leftover == 2){
+                b0 = b[off++] & 0xff;
+                b1 = b[off++] & 0xff;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            if(!closed){
+                closed = true;
+                if(leftover == 1){
+                    checkNewLine();
+                    out.write(base64[b0 >> 2]);
+                    out.write(base64[(b0 << 4) & 0x3f]);
+                    if(doPadding){
+                        out.write('=');
+                        out.write('=');
+                    }
+                }else if(leftover == 2){
+                    checkNewLine();
+                    out.write(base64[b0 >> 2]);
+                    out.write(base64[(b0 << 4) & 0x3f | (b1 >> 4)]);
+                    out.write(base64[(b1 << 2) & 0x3f]);
+                    if(doPadding){
+                        out.write('=');
+                    }
+                }
+            }
+            leftover = 0;
+            out.close();
+        }
+
     }
 
 }
