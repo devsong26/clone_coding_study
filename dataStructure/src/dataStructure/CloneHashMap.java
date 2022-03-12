@@ -147,4 +147,132 @@ public class CloneHashMap<K, V> extends AbstractMap<K, V>
         this.threshold = tableSizeFor(initialCapacity);
     }
 
+    public CloneHashMap(int initialCapacity){
+        this(initialCapacity, DEFAULT_LOAD_FACTOR);
+    }
+
+    public CloneHashMap(){
+        this.loadFactor = DEFAULT_LOAD_FACTOR;
+    }
+
+    public CloneHashMap(Map<? extends K, ? extends V> m){
+        this.loadFactor = DEFAULT_LOAD_FACTOR;
+        putMapEntries(m, false);
+    }
+
+    final void putMapEntries(Map<? extends K, ? extends V> m, boolean evict){
+        int s = m.size();
+        if (s > 0){
+            if(table == null){
+                float ft = ((float)s / loadFactor) + 1.0F;
+                int t = ((ft < (float)MAXIMUM_CAPACITY) ?
+                        (int)ft : MAXIMUM_CAPACITY);
+                if(t > threshold)
+                    threshold = tableSizeFor(t);
+            }
+            else if(s > threshold){
+                resize();
+            }
+
+            for(Map.Entry<? extends K, ? extends V> e : m.entrySet()){
+                K key = e.getKey();
+                V value = e.getValue();
+                putVal(hash(key), key, value, false, evict);
+            }
+        }
+    }
+
+    public int size(){
+        return size;
+    }
+
+    public boolean isEmpty(){
+        return size == 0;
+    }
+
+    public V get(Object key){
+        CloneNode<K, V> e;
+        return (e = getNode(hash(key), key)) == null ? null : e.value;
+    }
+
+    final CloneNode<K, V> getNode(int hash, Object key){
+        CloneNode<K, V>[] tab;
+        CloneNode<K, V> first, e;
+        int n;
+        K k;
+        if((tab = table) != null && (n = tab.length) > 0 &&
+            (first = tab[(n - 1) & hash]) != null){
+            if (first.hash == hash &&
+                ((k = first.key) == key || (key != null && key.equals(k))))
+                return first;
+
+            if ((e = first.next) != null){
+                if (first instanceof CloneTreeNode)
+                    return ((CloneTreeNode<K, V>)first).getTreeNode(hash, key);
+                do{
+                    if(e.hash == hash &&
+                        (k = e.key) == key || (key != null && key.equals(k)))
+                        return e;
+                }while ((e = e.next) != null);
+            }
+        }
+        return null;
+    }
+
+    public boolean containsKey(Object key){
+        return getNode(hash(key), key) != null;
+    }
+
+    public V put(K key, V value){
+        return putVal(hash(key), key, value, false, true);
+    }
+
+    final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
+                   boolean evict){
+        CloneNode<K, V>[] tab;
+        CloneNode<K, V> p;
+        int n, i;
+
+        if((tab = table) == null || (n = tab.length) == 0)
+            n = (tab = resize()).length;
+
+        if((p = tab[1 = (n - 1) & hash]) == null)
+            tab[i] = newNode(hash, key, value, null);
+        else{
+            CloneNode<K, V> e;
+            K k;
+            if(p.hash == hash &&
+                ((k = p.key) == key || (key != null && key.equals(k))))
+                e = p;
+            else if(p instanceof CloneTreeNode)
+                e = ((CloneTreeNode<K, V>)p).putTreeVal(this, tab, hash, key, value);
+            else{
+                for(int binCount = 0; ; binCount++){
+                    if((e = p.next) == null){
+                        p.next = newNode(hash, key, value, null);
+                        if(binCount >= TREEIFY_THRESHOLD - 1)
+                            treeifyBin(tab, hash);
+                        break;
+                    }
+                    if (e.hash == hash &&
+                        ((k = e.key) == key || (key != null && key.equals(k))))
+                        break;
+                }
+            }
+            if(e != null){
+                V oldValue = e.value;
+                if(!onlyIfAbsent || oldValue == null)
+                    e.value = value;
+
+                afterNodeAccess(e);
+                return oldValue;
+            }
+        }
+        ++modCount;
+        if(++size > threshold)
+            resize();
+        afterNodeInsertion(evict);
+        return null;
+    }
+
 }
