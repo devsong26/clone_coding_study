@@ -275,4 +275,31 @@ public class CloneHashMap<K, V> extends AbstractMap<K, V>
         return null;
     }
 
+    final CloneNode<K, V>[] resize(){
+        CloneNode<K, V>[] oldTab = table;
+        int oldCap = (oldTab == null) ? 0 : oldTab.length;
+        int oldThr = threshold;
+        int newCap, newThr = 0;
+        if(oldCap > 0){
+            if(oldCap >= MAXIMUM_CAPACITY){
+                threshold = Integer.MAX_VALUE;
+                return oldTab;
+            }
+            else if((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
+                    oldCap >= DEFAULT_INITIAL_CAPACITY)
+                newThr = oldThr << 1;
+        }
+        else if(oldThr > 0)
+            newCap = oldThr;
+        else{
+            newCap = DEFAULT_INITIAL_CAPACITY;
+            newThr = (int)(DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
+        }
+        if(newThr == 0){
+            float ft = (float)newCap * loadFactor;
+            newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
+                    (int)ft : Integer.MAX_VALUE);
+        }
+    }
+
 }
