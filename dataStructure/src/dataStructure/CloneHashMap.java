@@ -3,10 +3,7 @@ package dataStructure;
 import java.io.Serializable;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.AbstractMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class CloneHashMap<K, V> extends AbstractMap<K, V>
     implements Map<K, V>, Cloneable, Serializable {
@@ -300,6 +297,54 @@ public class CloneHashMap<K, V> extends AbstractMap<K, V>
             newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
                     (int)ft : Integer.MAX_VALUE);
         }
+        threshold = newThr;
+        @SuppressWarnings({"rawtypes","unchecked"})
+        CloneNode<K, V>[] newTab = (CloneNode<K,V>[])new CloneNode[newCap];
+        table = newTab;
+        if(oldTab != null){
+            for(int j=0; j<oldCap; j++){
+                CloneNode<K,V> e;
+                if((e = oldTab[j]) != null){
+                    oldTab[j] = null;
+                    if(e.next == null)
+                        newTab[e.hash & (newCap - 1)] = e;
+                    else if (e instanceof CloneTreeNode)
+                        ((CloneTreeNode<K, V>e).split(this, newTab, j, oldCap));
+                    else {
+                        CloneNode<K, V> loHead = null, loTail = null;
+                        CloneNode<K, V> hiHead = null, hiTail = null;
+                        CloneNode<K, V> next;
+                        do{
+                            next = e.next;
+                            if((e.hash & oldCap) == 0){
+                                if(loTail == null)
+                                    loHead = e;
+                                else
+                                    loTail.next = e;
+                                loTail = e;
+                            }
+                            else {
+                                if (hiTail == null)
+                                    hiHead = e;
+                                else
+                                    hiTail.next = e;
+                                hiTail = e;
+                            }
+                        }while((e = next) != null);
+                        if(loTail != null){
+                            loTail.next = null;
+                            newTab[j] = loHead;
+                        }
+                        if(hiTail != null){
+                            hiTail.next = null;
+                            newTab[j + oldCap] = hiHead;
+                        }
+                    }
+
+                }
+            }
+        }
+        return newTab;
     }
 
 }
